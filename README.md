@@ -164,7 +164,19 @@ Commerce, only handle one-time payments).
   sharing, so a stranger can't spam signups or waste OpenAI-verification calls.
 - **Cost-response parsing is unverified** against a real 200 (see above) — the
   very first real subscriber's data needs a manual sanity check.
-- **No unsubscribe flow yet** — fine for a handful of waitlist-stage testers,
-  needed before any wider launch.
 - **Single admin key per subscriber, OpenAI only** — no multi-provider, no
   per-project breakdown yet. Deliberately minimal for a first validated version.
+
+## Unsubscribe flow (built 2026-08-23) — done, deployed, verified live
+
+Every threshold email now carries a one-click unsubscribe link. Built end to
+end and verified against the real production Worker and D1, not just locally:
+
+- Migration `migrations/0002_unsubscribe.sql` adds a unique `unsubscribe_token`
+  per subscriber, generated at signup (`schema.sql` updated too, for fresh installs).
+- `GET /api/unsubscribe?token=...` flips `active` to 0 for the matching row.
+  Verified live: inserted a real test row into production D1, hit the real
+  endpoint, confirmed the row flipped, cleaned it up — not just "the code
+  looks right."
+- `src/email.ts`'s threshold email footer now links to it.
+- Deployed: Version ID `2d5c1aa4-db25-4a44-85a0-22edebb1ccb6`.

@@ -11,8 +11,11 @@ CREATE TABLE IF NOT EXISTS subscribers (
   last_notified_period TEXT,        -- 'YYYY-MM' the threshold above applies to; reset when the month rolls over
   last_error TEXT,                  -- most recent fetch/decrypt error, for debugging a stuck row
   last_checked_at TEXT,
-  tier TEXT NOT NULL DEFAULT 'free' -- 'free' or 'paid' - flipped by a confirmed payment webhook
+  tier TEXT NOT NULL DEFAULT 'free', -- 'free' or 'paid' - flipped by a confirmed payment webhook
+  unsubscribe_token TEXT             -- random token in every email's unsubscribe link
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscribers_unsubscribe_token ON subscribers(unsubscribe_token);
 
 -- One row per checkout attempt, across whichever payment gateway handled it.
 -- Adding a new gateway later (Lemon Squeezy, etc.) never touches this table's

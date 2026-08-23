@@ -15,6 +15,10 @@ export interface Env {
 
 const PAID_TIER_CENTS = 700; // $7/mo
 
+// Cron runs (scheduled()) have no request/origin to derive this from, unlike
+// handleCheckout's url.origin - fixed since this Worker has one known domain.
+const FUSEBOX_BASE_URL = "https://fusebox.sifatsrk.workers.dev";
+
 const THRESHOLDS: Array<50 | 80 | 100> = [50, 80, 100];
 
 function json(data: unknown, status = 200): Response {
@@ -204,15 +208,43 @@ async function handleSignup(req: Request, env: Env): Promise<Response> {
 
   const { ciphertext, iv } = await encryptSecret(apiKey, env.ENCRYPTION_KEY);
   const id = crypto.randomUUID();
+  const unsubscribeToken = crypto.randomUUID();
 
   await env.DB.prepare(
-    `INSERT INTO subscribers (id, email, provider, encrypted_key, iv, ceiling_cents, created_at)
-     VALUES (?, ?, 'openai', ?, ?, ?, ?)`,
+    `INSERT INTO subscribers (id, email, provider, encrypted_key, iv, ceiling_cents, created_at, unsubscribe_token)
+     VALUES (?, ?, 'openai', ?, ?, ?, ?, ?)`,
   )
-    .bind(id, email, ciphertext, iv, Math.round(ceilingDollars * 100), new Date().toISOString())
+    .bind(
+      id,
+      email,
+      ciphertext,
+      iv,
+      Math.round(ceilingDollars * 100),
+      new Date().toISOString(),
+      unsubscribeToken,
+    )
     .run();
 
   return json({ ok: true });
+}
+
+async function handleUnsubscribe(req: Request, env: Env, url: URL): Promise<Response> {
+  const token = url.searchParams.get("token") || "";
+  if (!token) return new Response("Missing token.", { status: 400 });
+
+  const result = await env.DB.prepare(
+    `UPDATE subscribers SET active = 0 WHERE unsubscribe_token = ? AND active = 1`,
+  )
+    .bind(token)
+    .run();
+
+  const found = (result.meta?.changes ?? 0) > 0;
+  return new Response(
+    found
+      ? "You're unsubscribed. No more Fusebox emails will be sent to this address."
+      : "That unsubscribe link is invalid or already used.",
+    { status: found ? 200 : 404, headers: { "content-type": "text/plain;charset=utf-8" } },
+  );
 }
 
 async function handleCheckout(req: Request, env: Env, url: URL): Promise<Response> {
@@ -334,6 +366,7 @@ async function runChecks(env: Env): Promise<void> {
           threshold: highest,
           spentCents: totalCents,
           ceilingCents: row.ceiling_cents,
+          unsubscribeUrl: `${FUSEBOX_BASE_URL}/api/unsubscribe?token=${row.unsubscribe_token}`,
         });
         await env.DB.prepare(
           `UPDATE subscribers SET last_notified_threshold = ?, last_notified_period = ?, last_checked_at = ?, last_error = NULL WHERE id = ?`,
@@ -368,6 +401,9 @@ export default {
     }
     if (url.pathname === "/api/signup" && req.method === "POST") {
       return handleSignup(req, env);
+    }
+    if (url.pathname === "/api/unsubscribe" && req.method === "GET") {
+      return handleUnsubscribe(req, env, url);
     }
     if (url.pathname === "/api/checkout" && req.method === "POST") {
       return handleCheckout(req, env, url);

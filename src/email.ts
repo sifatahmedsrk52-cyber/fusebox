@@ -9,6 +9,7 @@ export async function sendThresholdEmail(opts: {
   threshold: 50 | 80 | 100;
   spentCents: number;
   ceilingCents: number;
+  unsubscribeUrl: string;
 }): Promise<void> {
   const spent = (opts.spentCents / 100).toFixed(2);
   const ceiling = (opts.ceilingCents / 100).toFixed(2);
@@ -33,6 +34,7 @@ export async function sendThresholdEmail(opts: {
       <p style="font-size: 12px; color: #8a8272; margin-top: 32px;">
         You're getting this because you signed up for Fusebox alerts. This is a pre-launch MVP -
         reply to this email if something looks wrong.
+        <a href="${opts.unsubscribeUrl}" style="color: #8a8272;">Unsubscribe</a>
       </p>
     </div>
   `;
