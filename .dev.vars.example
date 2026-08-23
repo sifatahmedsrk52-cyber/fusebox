@@ -5,3 +5,5 @@
 ENCRYPTION_KEY=base64-32-random-bytes-here
 RESEND_API_KEY=re_your_resend_key
 ADMIN_SECRET=any-random-string-you-pick
+NOWPAYMENTS_API_KEY=from-nowpayments-dashboard
+NOWPAYMENTS_IPN_SECRET=from-nowpayments-payment-settings-tab

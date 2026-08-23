@@ -2,13 +2,18 @@ import { encryptSecret, decryptSecret } from "./crypto";
 import { fetchMonthToDateCostCents, currentPeriodKey } from "./openai";
 import { sendThresholdEmail } from "./email";
 import { STORY_PAGE } from "./story";
+import { getGateway } from "./payments/gateways";
 
 export interface Env {
   DB: D1Database;
   ENCRYPTION_KEY: string; // base64, set via `wrangler secret put ENCRYPTION_KEY`
   RESEND_API_KEY: string; // set via `wrangler secret put RESEND_API_KEY`
   ADMIN_SECRET: string; // set via `wrangler secret put ADMIN_SECRET` - gates /api/run-now
+  NOWPAYMENTS_API_KEY: string; // set via `wrangler secret put NOWPAYMENTS_API_KEY`
+  NOWPAYMENTS_IPN_SECRET: string; // set via `wrangler secret put NOWPAYMENTS_IPN_SECRET`
 }
+
+const PAID_TIER_CENTS = 700; // $7/mo
 
 const THRESHOLDS: Array<50 | 80 | 100> = [50, 80, 100];
 
@@ -89,6 +94,14 @@ const SIGNUP_PAGE = `<!doctype html>
     <div id="msg"></div>
   </form>
 
+  <div id="upgrade" class="steps" style="display:none;">
+    <b>Want unlimited projects, all three thresholds, and full history?</b>
+    <div style="margin-top:10px;">
+      <button id="upgradeBtn" type="button" style="margin-top:0;">Upgrade - $7/mo, pay with crypto</button>
+    </div>
+    <div id="upgradeMsg" style="margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:13px;"></div>
+  </div>
+
   <p style="margin-top:40px; font-size:13px; color:var(--steel); font-family:'IBM Plex Mono',monospace;">
     <a href="/story" style="color:var(--steel);">Why Fusebox doesn't support Claude yet &rarr;</a>
   </p>
@@ -120,6 +133,8 @@ const SIGNUP_PAGE = `<!doctype html>
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
       msg.className = 'ok';
       msg.textContent = "Armed. We'll email you at 50%, 80%, and 100% of your ceiling.";
+      document.getElementById('upgrade').style.display = 'block';
+      document.getElementById('upgrade').dataset.email = document.getElementById('email').value;
       f.reset();
     } catch (err) {
       msg.className = 'err';
@@ -127,6 +142,28 @@ const SIGNUP_PAGE = `<!doctype html>
     } finally {
       btn.disabled = false;
       btn.textContent = 'Arm alert';
+    }
+  });
+
+  document.getElementById('upgradeBtn').addEventListener('click', async () => {
+    const upgradeBtn = document.getElementById('upgradeBtn');
+    const upgradeMsg = document.getElementById('upgradeMsg');
+    const email = document.getElementById('upgrade').dataset.email;
+    upgradeBtn.disabled = true;
+    upgradeMsg.textContent = '';
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, gateway: 'nowpayments' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Something went wrong');
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      upgradeMsg.style.color = 'var(--danger)';
+      upgradeMsg.textContent = err.message;
+      upgradeBtn.disabled = false;
     }
   });
 </script>
@@ -176,6 +213,100 @@ async function handleSignup(req: Request, env: Env): Promise<Response> {
     .run();
 
   return json({ ok: true });
+}
+
+async function handleCheckout(req: Request, env: Env, url: URL): Promise<Response> {
+  let body: { email?: string; gateway?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "Malformed request." }, 400);
+  }
+
+  const email = (body.email || "").trim().toLowerCase();
+  const gatewayName = (body.gateway || "").trim();
+  if (!isValidEmail(email)) return json({ error: "That email doesn't look right." }, 400);
+
+  const gateway = getGateway(gatewayName);
+  if (!gateway) return json({ error: `Unknown payment gateway: ${gatewayName}` }, 400);
+
+  const apiKeyEnvVar =
+    gatewayName === "nowpayments" ? env.NOWPAYMENTS_API_KEY : undefined;
+  if (!apiKeyEnvVar) return json({ error: `${gatewayName} isn't configured yet.` }, 501);
+
+  const subscriber = await env.DB.prepare(`SELECT id FROM subscribers WHERE email = ? AND active = 1`)
+    .bind(email)
+    .first<{ id: string }>();
+  if (!subscriber) {
+    return json({ error: "Sign up for the free plan first, then upgrade from the same email." }, 404);
+  }
+
+  const paymentId = crypto.randomUUID();
+
+  let result;
+  try {
+    result = await gateway.createCheckout(
+      {
+        subscriberId: subscriber.id,
+        email,
+        amountCents: PAID_TIER_CENTS,
+        currency: "usd",
+        webhookUrl: `${url.origin}/api/webhooks/${gatewayName}`,
+        successUrl: `${url.origin}/?upgraded=1`,
+      },
+      apiKeyEnvVar,
+    );
+  } catch (err: any) {
+    console.error(`checkout creation failed for ${email} via ${gatewayName}:`, err);
+    return json({ error: "Couldn't start checkout. Try again in a moment." }, 502);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO payments (id, subscriber_id, gateway, external_id, status, amount_cents, currency, created_at)
+     VALUES (?, ?, ?, ?, 'pending', ?, 'usd', ?)`,
+  )
+    .bind(paymentId, subscriber.id, gatewayName, result.externalId, PAID_TIER_CENTS, new Date().toISOString())
+    .run();
+
+  return json({ checkoutUrl: result.checkoutUrl });
+}
+
+async function handlePaymentWebhook(req: Request, env: Env, gatewayName: string): Promise<Response> {
+  const gateway = getGateway(gatewayName);
+  if (!gateway) return new Response("Unknown gateway", { status: 404 });
+
+  const secret = gatewayName === "nowpayments" ? env.NOWPAYMENTS_IPN_SECRET : undefined;
+  if (!secret) return new Response("Not configured", { status: 501 });
+
+  const rawBody = await req.text();
+  const result = await gateway.verifyWebhook(req, rawBody, secret);
+  if (!result) return new Response("Invalid signature", { status: 401 });
+
+  const payment = await env.DB.prepare(
+    `SELECT id, subscriber_id FROM payments WHERE gateway = ? AND external_id = ?`,
+  )
+    .bind(gatewayName, result.externalId)
+    .first<{ id: string; subscriber_id: string }>();
+
+  if (!payment) {
+    console.error(`webhook for unknown payment: ${gatewayName}/${result.externalId}`);
+    return new Response("OK", { status: 200 }); // ack anyway - nothing to retry
+  }
+
+  await env.DB.prepare(`UPDATE payments SET status = ?, raw_webhook = ? WHERE id = ?`)
+    .bind(result.status, JSON.stringify(result.raw).slice(0, 4000), payment.id)
+    .run();
+
+  if (result.status === "paid") {
+    await env.DB.prepare(`UPDATE payments SET paid_at = ? WHERE id = ?`)
+      .bind(new Date().toISOString(), payment.id)
+      .run();
+    await env.DB.prepare(`UPDATE subscribers SET tier = 'paid' WHERE id = ?`)
+      .bind(payment.subscriber_id)
+      .run();
+  }
+
+  return new Response("OK", { status: 200 });
 }
 
 async function runChecks(env: Env): Promise<void> {
@@ -237,6 +368,13 @@ export default {
     }
     if (url.pathname === "/api/signup" && req.method === "POST") {
       return handleSignup(req, env);
+    }
+    if (url.pathname === "/api/checkout" && req.method === "POST") {
+      return handleCheckout(req, env, url);
+    }
+    const webhookMatch = url.pathname.match(/^\/api\/webhooks\/([a-z]+)$/);
+    if (webhookMatch && req.method === "POST") {
+      return handlePaymentWebhook(req, env, webhookMatch[1]);
     }
     if (url.pathname === "/api/run-now" && req.method === "POST") {
       // Manual trigger for testing during setup - hit it once after signing up

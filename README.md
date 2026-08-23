@@ -94,6 +94,42 @@ That gives you a live URL (`fusebox.<your-subdomain>.workers.dev`) — I wire th
 landing page's waitlist button to it once it's up, replacing the current `mailto:`
 placeholder.
 
+## Payments (2026-08-23) — built, not yet activated
+
+Extensible payment layer in `src/payments/` — one interface (`types.ts`), one
+implementation per gateway. First gateway: **NOWPayments** (USDT TRC20), chosen
+because it's the only crypto gateway checked that actually supports recurring/
+subscription billing (most crypto processors, including the now-shut-down Coinbase
+Commerce, only handle one-time payments).
+
+- `POST /api/checkout` — looks up an existing free subscriber by email, creates a
+  NOWPayments invoice, records a `pending` row in the new `payments` table, returns
+  the checkout URL.
+- `POST /api/webhooks/nowpayments` — verifies the webhook's HMAC-SHA512 signature
+  (algorithm confirmed against NOWPayments' own docs this session, not guessed -
+  recursively sort the JSON body's keys, `JSON.stringify`, HMAC-SHA512 with the IPN
+  secret, compare hex to the `x-nowpayments-sig` header), then flips the matching
+  subscriber's `tier` to `'paid'`.
+- **Verified end-to-end locally**: hand-computed a valid signature, confirmed the
+  Worker accepts it (200) and rejects a tampered one (401), and confirmed a real
+  webhook correctly flips a seeded subscriber from `free` to `paid` in D1. The one
+  thing NOT yet tested against a real account: the actual `/v1/invoice` response
+  shape (field name assumed `invoice_url`, with a defensive fallback) - check Worker
+  logs for `RAW NOWPAYMENTS INVOICE RESPONSE` on the first real checkout attempt.
+- **To activate**: sign up free at [nowpayments.io](https://nowpayments.io), set your
+  USDT (TRC20) outcome wallet, generate an API key and an IPN secret key (Payment
+  Settings tab), then:
+  ```bash
+  npx wrangler secret put NOWPAYMENTS_API_KEY
+  npx wrangler secret put NOWPAYMENTS_IPN_SECRET
+  ```
+  Until these are set, `/api/checkout` and the webhook both return a clean `501`
+  instead of crashing - safe to have shipped ahead of the account existing.
+- **Adding another gateway later** (Lemon Squeezy, etc.): write
+  `src/payments/<name>.ts` implementing the `PaymentGateway` interface, add one line
+  to `src/payments/gateways.ts`. No changes needed anywhere else - not to the D1
+  schema, not to `index.ts`'s routing, not to the frontend beyond adding a button.
+
 ## Known limitations (honest, not hidden)
 
 - **No abuse protection yet** on `/api/signup` — fine at zero/low traffic, but if
