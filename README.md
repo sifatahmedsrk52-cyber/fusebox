@@ -17,11 +17,12 @@ manual trigger correctly accepts/rejects, and a check run against the real (empt
 subscriber table completed cleanly. Landing page's CTA buttons now link straight to
 this signup form instead of the earlier `mailto:` placeholder.
 
+Repo is live and private at https://github.com/sifatahmedsrk52-cyber/fusebox.
+
 **Not yet done:** a real subscriber with a valid OpenAI admin key hasn't gone through
 the flow yet, so the *success*-path response parsing in `src/openai.ts` (see below)
 is still unverified against a real 200 response. First real signup should have its
-Worker logs (`npm run tail`) checked for the `RAW COSTS RESPONSE` line. Repo is not
-yet pushed to GitHub — say the word and I'll init + push.
+Worker logs (`npm run tail`) checked for the `RAW COSTS RESPONSE` line.
 
 ## Why OpenAI first, not Claude
 
