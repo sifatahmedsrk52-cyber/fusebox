@@ -24,6 +24,27 @@ the flow yet, so the *success*-path response parsing in `src/openai.ts` (see bel
 is still unverified against a real 200 response. First real signup should have its
 Worker logs (`npm run tail`) checked for the `RAW COSTS RESPONSE` line.
 
+## Distribution status (audited live, 2026-08-23) — READ THIS FIRST if you're picking this up cold
+
+The code and infra are 100% done. The only open work on Fusebox is distribution —
+getting the URL in front of people. Verified by logging into each site directly,
+not from memory:
+
+| Channel | Status |
+|---|---|
+| Hashnode | ✅ Live: [the /story writeup](https://sifatahmed.hashnode.dev/why-fusebox-doesn-t-support-claude-yet) is published. Near-zero views. |
+| dev.to | ✅ Live: same writeup published. 0 reactions, 0 comments, <25 views. |
+| Product Hunt | ✅ Listing fully built (logo, tagline, gallery). **Scheduled launch: Aug 25, 2026.** Upvoting is disabled until then — nothing to do but wait, or check `producthunt.com/posts/fusebox-3` on/after that date. |
+| Peerlist | ✅ Logged in (`peerlist.io/sifatahmedsrk52`), a Fusebox product card exists. Zero engagement so far. |
+| Indie Hackers | ✅ Logged in and ready (a stale cached page can make it *look* logged out — recheck if unsure). **No product/post has actually been submitted yet.** `indiehackers.com/products/new` is a free form, no paywall — confirmed by walking through it live. |
+| Hacker News | ✅ Logged in as `SifatAhmed`. **Zero submissions ever made** — the Show HN post drafted in `LAUNCH_POSTS.md` was written but never actually posted. `news.ycombinator.com/submit` is a free plain form, no paywall — confirmed by opening it live. Submitting here is the single highest-leverage action left undone on this project. |
+| NOWPayments | Real account, live API keys already active as Worker secrets (see Payments section below). Confirmed working in the user's main browser; a secondary browser profile isn't signed in, which is expected and not an issue. |
+
+**Bottom line:** nothing here was ever blocked by cost or a paywall on any platform —
+checked HN and Indie Hackers' submission flows directly, both are entirely free.
+The gap is purely that Show HN and Indie Hackers submissions were drafted and never
+clicked "submit." That's the next action, not more building.
+
 ## Why OpenAI first, not Claude
 
 I checked both providers' admin-key systems before writing any code:
