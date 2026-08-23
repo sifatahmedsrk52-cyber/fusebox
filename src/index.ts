@@ -1,6 +1,7 @@
 import { encryptSecret, decryptSecret } from "./crypto";
 import { fetchMonthToDateCostCents, currentPeriodKey } from "./openai";
 import { sendThresholdEmail } from "./email";
+import { STORY_PAGE } from "./story";
 
 export interface Env {
   DB: D1Database;
@@ -87,6 +88,10 @@ const SIGNUP_PAGE = `<!doctype html>
     <button id="submit" type="submit">Arm alert</button>
     <div id="msg"></div>
   </form>
+
+  <p style="margin-top:40px; font-size:13px; color:var(--steel); font-family:'IBM Plex Mono',monospace;">
+    <a href="/story" style="color:var(--steel);">Why Fusebox doesn't support Claude yet &rarr;</a>
+  </p>
 </div>
 <script>
   const f = document.getElementById('f');
@@ -222,6 +227,9 @@ export default {
 
     if (url.pathname === "/" && req.method === "GET") {
       return new Response(SIGNUP_PAGE, { headers: { "content-type": "text/html;charset=utf-8" } });
+    }
+    if (url.pathname === "/story" && req.method === "GET") {
+      return new Response(STORY_PAGE, { headers: { "content-type": "text/html;charset=utf-8" } });
     }
     if (url.pathname === "/api/signup" && req.method === "POST") {
       return handleSignup(req, env);
