@@ -1,0 +1,15 @@
+name = "fusebox"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fusebox-db"
+database_id = "055f96dc-8b6e-4e0a-84d1-5afcf87f834b"
+
+# Runs every 6 hours. OpenAI's usage data lands within minutes of a request
+# completing, so 6h is frequent enough to catch a runaway loop same-day
+# without burning cron invocations (free tier: 100k/day, this uses 4).
+[triggers]
+crons = ["0 */6 * * *"]
