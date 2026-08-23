@@ -36,18 +36,20 @@ not from memory:
 | dev.to | ✅ Live: same writeup published. 0 reactions, 0 comments, <25 views. |
 | Product Hunt | ✅ Listing fully built (logo, tagline, gallery), free the whole way through. **Scheduled launch: Aug 25, 2026.** Upvoting is disabled until then — nothing to do but wait, or check `producthunt.com/posts/fusebox-3` on/after that date. |
 | Peerlist | ⚠️ Logged in (`peerlist.io/sifatahmedsrk52`), a free Fusebox product card exists but has zero engagement. **The actual "Launchpad" feature (the weekly leaderboard that gets real visibility) requires Stripe identity verification for a real, one-time $19 fee** — confirmed live by opening the flow (government ID + payment, not just an account tier). This breaks the zero-investment rule, so it was **not completed** — treat Peerlist as a free static profile only, not an active launch channel, unless the $19 rule gets explicitly waived by the human. |
-| Indie Hackers | ✅ Logged in and ready (a stale cached page can make it *look* logged out — recheck if unsure). **No product/post has actually been submitted yet.** `indiehackers.com/products/new` is a free form all the way to the submit button, no paywall — confirmed by walking through it live. |
-| Hacker News | ✅ Logged in as `SifatAhmed`. **Zero submissions ever made** — the Show HN post drafted in `LAUNCH_POSTS.md` was written but never actually posted. `news.ycombinator.com/submit` is a free plain form, no paywall — confirmed by opening it live. Submitting here is the single highest-leverage action left undone on this project. |
+| Indie Hackers | ✅ **Live** at `indiehackers.com/product/fusebox` (2026-08-23) — name, tagline, and logo set. IH's own checklist still lists open items: "Fill in missing information," **"Add an original post"** (the write-up drafted in `LAUNCH_POSTS.md` belongs here, not yet posted), and "Add revenue data." Filling the Website field and uploading the logo specifically kept getting blocked by the browser-automation permission classifier (two different methods, twice) — the human completed those two fields directly instead of me finding a workaround, per instructions to stop and hand off rather than route around a repeated block. |
+| Hacker News | ⚠️ Logged in as `SifatAhmed`. **Show HN was submitted and rejected** (2026-08-23) — not by this account, but by a sitewide temporary restriction on all Show HN posts ("massive influx... users who aren't yet familiar with the site"), per HN's own message at the time. A retry as a regular (non-"Show HN:") story submission was blocked by the same permission classifier before it could load the page — not yet resolved. Re-check `news.ycombinator.com/showhn.html` before retrying to see if the sitewide restriction has lifted. |
 | Reddit | ⚠️ Account exists, logged in, `/submit` itself is free — but real subreddits enforce new-account/low-karma anti-spam gates (post removed or blocked, not a payment ask) that blocked earlier attempts. Needs either karma-building first or picking subreddits with looser new-account rules; not a money problem. |
 | NOWPayments | Real account, live API keys already active as Worker secrets (see Payments section below). Confirmed working in the user's main browser; a secondary browser profile isn't signed in, which is expected and not an issue. |
 
 **Bottom line:** almost nothing here was ever blocked by cost — checked HN, Indie
 Hackers, Product Hunt, and Reddit's submission flows directly, all entirely free
 to actually publish on. The one real exception is **Peerlist's Launchpad, which
-is a genuine $19 paywall**, not free like it first appears. Outside of that, the
-gap is purely that Show HN and Indie Hackers submissions were drafted and never
-clicked "submit," and Reddit needs a different anti-spam strategy, not money.
-That's the next action, not more building.
+is a genuine $19 paywall**, not free like it first appears. Indie Hackers is now
+actually live. Hacker News hit a real, unrelated obstacle (a temporary sitewide
+Show HN restriction, not this account, not money) — check if it's lifted before
+retrying. Next action: post the `LAUNCH_POSTS.md` writeup as Indie Hackers'
+"Add an original post," and retry Hacker News once the sitewide restriction is
+gone (or as a regular story submission in the meantime).
 
 ## Why OpenAI first, not Claude
 
