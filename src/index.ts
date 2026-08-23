@@ -92,6 +92,10 @@ const SIGNUP_PAGE = `<!doctype html>
   <p style="margin-top:40px; font-size:13px; color:var(--steel); font-family:'IBM Plex Mono',monospace;">
     <a href="/story" style="color:var(--steel);">Why Fusebox doesn't support Claude yet &rarr;</a>
   </p>
+
+  <a href="https://www.producthunt.com/posts/fusebox-3?utm_source=badge-featured&#0038;utm_medium=badge&#0038;utm_souce=badge-fusebox-3" target="_blank" style="display:inline-block; margin-top:24px;">
+    <img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1229652&theme=light" alt="Fusebox - Spend-ceiling alerts for solo OpenAI API users | Product Hunt" style="width:250px;height:54px;" width="250" height="54" />
+  </a>
 </div>
 <script>
   const f = document.getElementById('f');
