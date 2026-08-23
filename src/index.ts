@@ -11,6 +11,20 @@ export interface Env {
   ADMIN_SECRET: string; // set via `wrangler secret put ADMIN_SECRET` - gates /api/run-now
   NOWPAYMENTS_API_KEY: string; // set via `wrangler secret put NOWPAYMENTS_API_KEY`
   NOWPAYMENTS_IPN_SECRET: string; // set via `wrangler secret put NOWPAYMENTS_IPN_SECRET`
+  TURNSTILE_SECRET_KEY: string; // set via `wrangler secret put TURNSTILE_SECRET_KEY` - signup abuse protection
+}
+
+const TURNSTILE_SITE_KEY = "0x4AAAAAAEZLSI2ckWLj8y1r"; // public, safe to embed client-side
+
+async function verifyTurnstile(token: string, secretKey: string): Promise<boolean> {
+  if (!token) return false;
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ secret: secretKey, response: token }),
+  });
+  const data: any = await res.json().catch(() => ({}));
+  return data?.success === true;
 }
 
 const PAID_TIER_CENTS = 700; // $7/mo
@@ -41,6 +55,7 @@ const SIGNUP_PAGE = `<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <style>
   :root {
     --paper:#f2efe7; --paper-raised:#ffffff; --ink:#1d1a14; --ink-soft:#514c40;
@@ -94,7 +109,9 @@ const SIGNUP_PAGE = `<!doctype html>
     <input id="key" name="key" type="password" required placeholder="sk-admin-...">
     <div class="hint">Encrypted at rest. Used only to call the read-only costs endpoint on a schedule. Never used to make model requests, never shared.</div>
 
-    <button id="submit" type="submit">Arm alert</button>
+    <div class="cf-turnstile" data-sitekey="${TURNSTILE_SITE_KEY}" data-callback="onTurnstileToken" data-error-callback="onTurnstileError"></div>
+
+    <button id="submit" type="submit" disabled>Loading...</button>
     <div id="msg"></div>
   </form>
 
@@ -118,8 +135,21 @@ const SIGNUP_PAGE = `<!doctype html>
   const f = document.getElementById('f');
   const msg = document.getElementById('msg');
   const btn = document.getElementById('submit');
+  let turnstileToken = '';
+
+  window.onTurnstileToken = function (token) {
+    turnstileToken = token;
+    btn.disabled = false;
+    btn.textContent = 'Arm alert';
+  };
+  window.onTurnstileError = function () {
+    msg.className = 'err';
+    msg.textContent = 'Verification failed to load - refresh and try again.';
+  };
+
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!turnstileToken) return;
     btn.disabled = true;
     btn.textContent = 'Checking key...';
     msg.className = ''; msg.textContent = '';
@@ -131,6 +161,7 @@ const SIGNUP_PAGE = `<!doctype html>
           email: document.getElementById('email').value,
           ceiling: document.getElementById('ceiling').value,
           key: document.getElementById('key').value,
+          turnstileToken: turnstileToken,
         }),
       });
       const data = await res.json();
@@ -146,6 +177,7 @@ const SIGNUP_PAGE = `<!doctype html>
     } finally {
       btn.disabled = false;
       btn.textContent = 'Arm alert';
+      if (window.turnstile) { turnstile.reset(); turnstileToken = ''; btn.disabled = true; }
     }
   });
 
@@ -175,12 +207,15 @@ const SIGNUP_PAGE = `<!doctype html>
 </html>`;
 
 async function handleSignup(req: Request, env: Env): Promise<Response> {
-  let body: { email?: string; ceiling?: string; key?: string };
+  let body: { email?: string; ceiling?: string; key?: string; turnstileToken?: string };
   try {
     body = await req.json();
   } catch {
     return json({ error: "Malformed request." }, 400);
   }
+
+  const turnstileOk = await verifyTurnstile(body.turnstileToken || "", env.TURNSTILE_SECRET_KEY);
+  if (!turnstileOk) return json({ error: "Verification failed. Refresh and try again." }, 400);
 
   const email = (body.email || "").trim().toLowerCase();
   const ceilingDollars = Number(body.ceiling);

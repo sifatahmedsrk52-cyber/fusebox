@@ -159,13 +159,26 @@ Commerce, only handle one-time payments).
 
 ## Known limitations (honest, not hidden)
 
-- **No abuse protection yet** on `/api/signup` — fine at zero/low traffic, but if
-  this gets any real attention I should add Cloudflare Turnstile before wider
-  sharing, so a stranger can't spam signups or waste OpenAI-verification calls.
 - **Cost-response parsing is unverified** against a real 200 (see above) — the
   very first real subscriber's data needs a manual sanity check.
 - **Single admin key per subscriber, OpenAI only** — no multi-provider, no
   per-project breakdown yet. Deliberately minimal for a first validated version.
+
+## Signup abuse protection (built 2026-08-23) — Cloudflare Turnstile, done and live
+
+Invisible Turnstile widget on the signup form, verified server-side before
+any signup logic runs. Built and verified end-to-end, not just deployed:
+
+- Widget created directly via `wrangler turnstile widget create` (no
+  dashboard click needed) — sitekey `0x4AAAAAAEZLSI2ckWLj8y1r`, invisible mode.
+- `TURNSTILE_SECRET_KEY` set as a live Worker secret.
+- `handleSignup` now rejects any request without a valid token, verified live:
+  a real POST to `/api/signup` with no token gets a real 400 rejection.
+- Verified client-side in a real browser too: the invisible widget resolves
+  automatically on page load, the submit button goes from disabled
+  ("Loading...") to enabled ("Arm alert") once a real token is captured -
+  watched this happen, not assumed from the code.
+- Deployed: Version ID `cf0aedf5-8f11-4f61-956f-138a8fd78470`.
 
 ## Unsubscribe flow (built 2026-08-23) — done, deployed, verified live
 
