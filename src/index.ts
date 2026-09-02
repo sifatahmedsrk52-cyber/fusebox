@@ -12,6 +12,10 @@ export interface Env {
   NOWPAYMENTS_API_KEY: string; // set via `wrangler secret put NOWPAYMENTS_API_KEY`
   NOWPAYMENTS_IPN_SECRET: string; // set via `wrangler secret put NOWPAYMENTS_IPN_SECRET`
   TURNSTILE_SECRET_KEY: string; // set via `wrangler secret put TURNSTILE_SECRET_KEY` - signup abuse protection
+  LEMONSQUEEZY_API_KEY: string; // set via `wrangler secret put LEMONSQUEEZY_API_KEY`
+  LEMONSQUEEZY_STORE_ID: string; // set via `wrangler secret put LEMONSQUEEZY_STORE_ID`
+  LEMONSQUEEZY_VARIANT_ID: string; // set via `wrangler secret put LEMONSQUEEZY_VARIANT_ID` - the $7/mo product's variant
+  LEMONSQUEEZY_WEBHOOK_SECRET: string; // set via `wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET`
 }
 
 const TURNSTILE_SITE_KEY = "0x4AAAAAAEZLSI2ckWLj8y1r"; // public, safe to embed client-side
@@ -127,7 +131,7 @@ const SIGNUP_PAGE = `<!doctype html>
     <div class="plan paid">
       <div class="tier">Paid</div>
       <div class="price">$7<span style="font-size:14px;">/mo</span></div>
-      <ul><li>Everything in Free</li><li>+ early warnings at 50% and 80%</li><li>Pay with crypto</li></ul>
+      <ul><li>Everything in Free</li><li>+ early warnings at 50% and 80%</li></ul>
     </div>
   </div>
 
@@ -168,7 +172,7 @@ const SIGNUP_PAGE = `<!doctype html>
   <div id="upgrade" class="steps" style="display:none;">
     <b>Free tier emails you once you've already hit your ceiling. Want the 50% and 80% early warnings too - the ones that actually let you catch a runaway loop before it becomes a bad bill?</b>
     <div style="margin-top:10px;">
-      <button id="upgradeBtn" type="button" style="margin-top:0;">Upgrade - $7/mo, pay with crypto</button>
+      <button id="upgradeBtn" type="button" style="margin-top:0;">Upgrade - $7/mo</button>
     </div>
     <div id="upgradeMsg" style="margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:13px;"></div>
   </div>
@@ -238,11 +242,22 @@ const SIGNUP_PAGE = `<!doctype html>
     upgradeBtn.disabled = true;
     upgradeMsg.textContent = '';
     try {
-      const res = await fetch('/api/checkout', {
+      // Prefer card/PayPal via Lemon Squeezy - crypto-only checkout is real
+      // friction for most people. Falls back to NOWPayments (crypto)
+      // automatically until Lemon Squeezy secrets are set, so this starts
+      // working the moment they're configured with no frontend redeploy.
+      let res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, gateway: 'nowpayments' }),
+        body: JSON.stringify({ email, gateway: 'lemonsqueezy' }),
       });
+      if (res.status === 501) {
+        res = await fetch('/api/checkout', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, gateway: 'nowpayments' }),
+        });
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
       window.location.href = data.checkoutUrl;
@@ -347,9 +362,17 @@ async function handleCheckout(req: Request, env: Env, url: URL): Promise<Respons
   const gateway = getGateway(gatewayName);
   if (!gateway) return json({ error: `Unknown payment gateway: ${gatewayName}` }, 400);
 
-  const apiKeyEnvVar =
-    gatewayName === "nowpayments" ? env.NOWPAYMENTS_API_KEY : undefined;
-  if (!apiKeyEnvVar) return json({ error: `${gatewayName} isn't configured yet.` }, 501);
+  let secrets: Record<string, string> | undefined;
+  if (gatewayName === "nowpayments" && env.NOWPAYMENTS_API_KEY) {
+    secrets = { apiKey: env.NOWPAYMENTS_API_KEY };
+  } else if (gatewayName === "lemonsqueezy" && env.LEMONSQUEEZY_API_KEY && env.LEMONSQUEEZY_STORE_ID && env.LEMONSQUEEZY_VARIANT_ID) {
+    secrets = {
+      apiKey: env.LEMONSQUEEZY_API_KEY,
+      storeId: env.LEMONSQUEEZY_STORE_ID,
+      variantId: env.LEMONSQUEEZY_VARIANT_ID,
+    };
+  }
+  if (!secrets) return json({ error: `${gatewayName} isn't configured yet.` }, 501);
 
   const subscriber = await env.DB.prepare(`SELECT id FROM subscribers WHERE email = ? AND active = 1`)
     .bind(email)
@@ -371,7 +394,7 @@ async function handleCheckout(req: Request, env: Env, url: URL): Promise<Respons
         webhookUrl: `${url.origin}/api/webhooks/${gatewayName}`,
         successUrl: `${url.origin}/?upgraded=1`,
       },
-      apiKeyEnvVar,
+      secrets,
     );
   } catch (err: any) {
     console.error(`checkout creation failed for ${email} via ${gatewayName}:`, err);
@@ -392,7 +415,12 @@ async function handlePaymentWebhook(req: Request, env: Env, gatewayName: string)
   const gateway = getGateway(gatewayName);
   if (!gateway) return new Response("Unknown gateway", { status: 404 });
 
-  const secret = gatewayName === "nowpayments" ? env.NOWPAYMENTS_IPN_SECRET : undefined;
+  const secret =
+    gatewayName === "nowpayments"
+      ? env.NOWPAYMENTS_IPN_SECRET
+      : gatewayName === "lemonsqueezy"
+        ? env.LEMONSQUEEZY_WEBHOOK_SECRET
+        : undefined;
   if (!secret) return new Response("Not configured", { status: 501 });
 
   const rawBody = await req.text();

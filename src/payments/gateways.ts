@@ -6,9 +6,11 @@
 
 import type { PaymentGateway } from "./types";
 import { nowpayments } from "./nowpayments";
+import { lemonsqueezy } from "./lemonsqueezy";
 
 export const GATEWAYS: Record<string, PaymentGateway> = {
   nowpayments,
+  lemonsqueezy,
 };
 
 export function getGateway(name: string): PaymentGateway | undefined {

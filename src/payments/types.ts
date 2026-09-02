@@ -26,7 +26,10 @@ export interface WebhookVerifyResult {
 
 export interface PaymentGateway {
   name: string;
-  createCheckout(req: CheckoutRequest, apiKey: string): Promise<CheckoutResult>;
+  // `secrets` always has at least `apiKey`; gateways that need more than one
+  // credential (e.g. Lemon Squeezy's store/variant IDs) read extra keys off
+  // the same object instead of the signature growing per gateway.
+  createCheckout(req: CheckoutRequest, secrets: Record<string, string>): Promise<CheckoutResult>;
   // Verifies the webhook's authenticity (signature check) and returns the
   // parsed status, or null if the signature doesn't check out - callers
   // must treat null as "reject this webhook", never as "no payment found".

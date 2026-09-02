@@ -14,11 +14,11 @@ import type { CheckoutRequest, CheckoutResult, PaymentGateway, WebhookVerifyResu
 
 const API_BASE = "https://api.nowpayments.io/v1";
 
-async function createCheckout(req: CheckoutRequest, apiKey: string): Promise<CheckoutResult> {
+async function createCheckout(req: CheckoutRequest, secrets: Record<string, string>): Promise<CheckoutResult> {
   const res = await fetch(`${API_BASE}/invoice`, {
     method: "POST",
     headers: {
-      "x-api-key": apiKey,
+      "x-api-key": secrets.apiKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
