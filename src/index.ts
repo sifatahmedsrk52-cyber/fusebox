@@ -33,7 +33,12 @@ const PAID_TIER_CENTS = 700; // $7/mo
 // handleCheckout's url.origin - fixed since this Worker has one known domain.
 const FUSEBOX_BASE_URL = "https://fusebox.sifatsrk.workers.dev";
 
-const THRESHOLDS: Array<50 | 80 | 100> = [50, 80, 100];
+// Free tier only gets told once the ceiling is actually blown - that's the
+// baseline promise ("we'll email you"). Paid gets the early warnings too
+// (50/80%), which is the part that actually lets you catch a runaway loop
+// before it becomes a bad bill - the real reason to upgrade.
+const FREE_THRESHOLDS: Array<50 | 80 | 100> = [100];
+const PAID_THRESHOLDS: Array<50 | 80 | 100> = [50, 80, 100];
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -81,13 +86,58 @@ const SIGNUP_PAGE = `<!doctype html>
   .steps ol { margin:8px 0 0; padding-left:18px; }
   .steps li { margin:4px 0; }
   .steps code { background:var(--paper); padding:1px 5px; border-radius:3px; font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
+  .kicker { font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--amber); margin:0 0 10px; }
+  .sub { color:var(--ink-soft); font-size:16px; margin:0 0 28px; max-width:48ch; line-height:1.5; }
+  .mock { background:var(--paper-raised); border:1px solid var(--line); border-radius:6px; padding:16px 18px; margin:0 0 28px; font-family:'IBM Plex Mono',monospace; font-size:13px; }
+  .mock .from { color:var(--steel); font-size:11px; margin-bottom:8px; }
+  .mock .subj { color:var(--ink); font-weight:600; margin-bottom:10px; }
+  .mock .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin:10px 0; }
+  .mock .bar-fill { height:100%; width:80%; background:var(--amber); }
+  .mock .body { color:var(--ink-soft); }
+  .pricing { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:0 0 28px; }
+  .plan { background:var(--paper-raised); border:1px solid var(--line); border-radius:6px; padding:16px 18px; }
+  .plan.paid { border-color:var(--ink); }
+  .plan .tier { font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--steel); }
+  .plan .price { font-family:'Big Shoulders Display',sans-serif; font-weight:800; font-size:26px; margin:4px 0 8px; }
+  .plan ul { margin:0; padding-left:18px; font-size:13px; color:var(--ink-soft); line-height:1.7; }
+  .trust { display:flex; gap:12px; align-items:flex-start; background:var(--paper-raised); border:1px solid var(--line); border-radius:6px; padding:16px 18px; margin:0 0 28px; font-size:13.5px; color:var(--ink-soft); line-height:1.6; }
+  .trust b { color:var(--ink); }
+  h2.formhead { font-family:'Big Shoulders Display',sans-serif; font-weight:800; font-size:24px; margin:44px 0 6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="javascript:history.back()">&larr; back</a>
-  <h1>Set your ceiling.</h1>
-  <p class="lede">Three fields. We check the key works before storing anything, then you're armed.</p>
+  <p class="kicker">Free · OpenAI API users</p>
+  <h1>Know before it blows.</h1>
+  <p class="sub">Set a monthly $ ceiling. Get emailed at 50%, 80%, and 100% of it — before a retry loop or a leaked key turns a $12 side project into a $300 surprise.</p>
+
+  <div class="mock">
+    <div class="from">Fusebox &lt;alerts@fusebox.dev&gt;</div>
+    <div class="subj">You've hit 80% of your $50 ceiling</div>
+    <div class="bar"><div class="bar-fill"></div></div>
+    <div class="body">$40.10 spent this month. $9.90 left before you hit your limit.</div>
+  </div>
+
+  <div class="pricing">
+    <div class="plan">
+      <div class="tier">Free</div>
+      <div class="price">$0</div>
+      <ul><li>Emailed once you hit 100%</li><li>Unlimited months</li></ul>
+    </div>
+    <div class="plan paid">
+      <div class="tier">Paid</div>
+      <div class="price">$7<span style="font-size:14px;">/mo</span></div>
+      <ul><li>Everything in Free</li><li>+ early warnings at 50% and 80%</li><li>Pay with crypto</li></ul>
+    </div>
+  </div>
+
+  <div class="trust">
+    <span>&#128274;</span>
+    <div><b>The key we ask for can't spend a cent.</b> Scoped to <code style="background:var(--paper);padding:1px 5px;border-radius:3px;">api.usage.read</code> only — it can't touch billing, other keys, or your org's members. Worst case if it ever leaked: someone sees your usage numbers, nothing else.</div>
+  </div>
+
+  <h2 class="formhead">Get started — 3 fields, 2 minutes.</h2>
+  <p class="lede">We check the key works before storing anything, then you're armed.</p>
 
   <div class="steps">
     <b>Before you paste a key:</b> create a scoped OpenAI Admin key so we can only ever <i>read</i>, never spend or manage anything.
@@ -116,7 +166,7 @@ const SIGNUP_PAGE = `<!doctype html>
   </form>
 
   <div id="upgrade" class="steps" style="display:none;">
-    <b>Want unlimited projects, all three thresholds, and full history?</b>
+    <b>Free tier emails you once you've already hit your ceiling. Want the 50% and 80% early warnings too - the ones that actually let you catch a runaway loop before it becomes a bad bill?</b>
     <div style="margin-top:10px;">
       <button id="upgradeBtn" type="button" style="margin-top:0;">Upgrade - $7/mo, pay with crypto</button>
     </div>
@@ -167,7 +217,7 @@ const SIGNUP_PAGE = `<!doctype html>
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
       msg.className = 'ok';
-      msg.textContent = "Armed. We'll email you at 50%, 80%, and 100% of your ceiling.";
+      msg.textContent = "Armed. We'll email you once you hit your ceiling.";
       document.getElementById('upgrade').style.display = 'block';
       document.getElementById('upgrade').dataset.email = document.getElementById('email').value;
       f.reset();
@@ -391,7 +441,8 @@ async function runChecks(env: Env): Promise<void> {
       const notifiedThreshold = row.last_notified_period === period ? row.last_notified_threshold : 0;
 
       const pct = (totalCents / row.ceiling_cents) * 100;
-      const crossed = THRESHOLDS.filter((t) => pct >= t && t > notifiedThreshold);
+      const thresholds = row.tier === "paid" ? PAID_THRESHOLDS : FREE_THRESHOLDS;
+      const crossed = thresholds.filter((t) => pct >= t && t > notifiedThreshold);
       const highest = crossed.length ? crossed[crossed.length - 1] : null;
 
       if (highest) {
