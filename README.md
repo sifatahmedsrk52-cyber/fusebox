@@ -121,13 +121,19 @@ That gives you a live URL (`fusebox.<your-subdomain>.workers.dev`) — I wire th
 landing page's waitlist button to it once it's up, replacing the current `mailto:`
 placeholder.
 
-## Payments (2026-08-23) — built, not yet activated
+## Payments — two gateways, one active
 
 Extensible payment layer in `src/payments/` — one interface (`types.ts`), one
-implementation per gateway. First gateway: **NOWPayments** (USDT TRC20), chosen
-because it's the only crypto gateway checked that actually supports recurring/
-subscription billing (most crypto processors, including the now-shut-down Coinbase
-Commerce, only handle one-time payments).
+implementation per gateway.
+
+**NOWPayments** (USDT TRC20) — the original gateway, chosen because it's the
+only crypto gateway checked that actually supports recurring/subscription
+billing (most crypto processors, including the now-shut-down Coinbase
+Commerce, only handle one-time payments). **Confirmed genuinely live and
+configured 2026-09-02** by logging into the real dashboard: a real API key
+(created 2026-08-23), a real IPN secret, the webhook URL correctly pointed at
+this Worker, and a real USDT-TRC20 payout wallet are all set — not just
+plausible-looking, actually verified.
 
 - `POST /api/checkout` — looks up an existing free subscriber by email, creates a
   NOWPayments invoice, records a `pending` row in the new `payments` table, returns
@@ -152,10 +158,41 @@ Commerce, only handle one-time payments).
   ```
   Until these are set, `/api/checkout` and the webhook both return a clean `501`
   instead of crashing - safe to have shipped ahead of the account existing.
-- **Adding another gateway later** (Lemon Squeezy, etc.): write
-  `src/payments/<name>.ts` implementing the `PaymentGateway` interface, add one line
-  to `src/payments/gateways.ts`. No changes needed anywhere else - not to the D1
-  schema, not to `index.ts`'s routing, not to the frontend beyond adding a button.
+
+**Lemon Squeezy** (cards/PayPal) — added 2026-09-02 because crypto-only checkout
+is real friction for a mainstream, non-crypto-native audience; research this
+session confirmed it's a known conversion killer for exactly this kind of
+product. Lemon Squeezy is a merchant of record: free until a sale happens (no
+monthly fee, ~5% + $0.50 per transaction), handles sales tax/VAT/GST itself, and
+needs no LLC.
+
+- The frontend's upgrade button now tries `lemonsqueezy` first and falls back to
+  `nowpayments` automatically on a `501`, so it starts working the moment the
+  secrets below are set - **no further deploy needed**.
+- **Untested against a real account** (none exists yet) - the checkout
+  request/response shape and the webhook event names (`subscription_payment_success`,
+  falling back to `order_created`) are built from Lemon Squeezy's public docs, same
+  honesty-first approach as the original NOWPayments integration. Check Worker logs
+  for the `RAW LEMONSQUEEZY...` lines on the first real checkout and webhook.
+- **To activate**: sign up free at [lemonsqueezy.com](https://www.lemonsqueezy.com/)
+  (account approval typically takes 1-3 business days, sometimes longer - start
+  this early, not the day you need it), create a $7/mo product/variant, then:
+  ```bash
+  npx wrangler secret put LEMONSQUEEZY_API_KEY
+  npx wrangler secret put LEMONSQUEEZY_STORE_ID
+  npx wrangler secret put LEMONSQUEEZY_VARIANT_ID
+  npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
+  ```
+  The webhook secret is one you choose yourself when creating the webhook in the
+  Lemon Squeezy dashboard (Settings → Webhooks), pointed at
+  `https://fusebox.sifatsrk.workers.dev/api/webhooks/lemonsqueezy`, subscribed to
+  at least `order_created` and `subscription_payment_success`.
+
+- **Adding another gateway later**: write `src/payments/<name>.ts` implementing the
+  `PaymentGateway` interface, add one line to `src/payments/gateways.ts`. No changes
+  needed anywhere else - not to the D1 schema, not to `index.ts`'s routing beyond the
+  same two-line gateway-name check the existing gateways use, not to the frontend
+  beyond deciding whether it should also be tried before falling back.
 
 ## Known limitations (honest, not hidden)
 
